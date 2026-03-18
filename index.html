@@ -803,17 +803,41 @@ ${dispName(expert)}の発言:`;
       return msg;
     };
 
-    // ── Run rounds ────────────────────────────────────────────────────────────
-    const runRounds = async (branchId, numRounds) => {
-      const cfg  = settingsRef.current;
+    // ── 次の発言者を選択 ──────────────────────────────────────────────────
+    const selectNextExpert = async (history, topicStr) => {
       const exps = expertsRef.current;
-      let isFirst = true;
-      for(let r=0; r<numRounds; r++){
-        for(let i=0; i<exps.length; i++){
-          if(!isGenRef.current) return;
-          await genOne(exps[i], branchId, getMsgs(branchId), cfg, isFirst);
-          isFirst = false;
-        }
+      const histText = history.slice(-5).map(m=>{
+        if(m.type==='user') return `[ユーザー]: ${m.content}`;
+        const e=exps.find(x=>x.id===m.expertId);
+        return `[${dispName(e)}]: ${m.content.slice(0,100)}...`;
+      }).join('\n');
+
+      const prompt = `あなたは世界会議のモデレーターです。以下の議題と議論の流れを見て、次に発言すべき最適なロールを1名選んでください。
+議題: ${topicStr}
+直近の議論:
+${histText || '（開始前）'}
+
+候補ロール一覧:
+${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}`).join('\n')}
+
+次に発言すべきロールのID（例: e1）のみを1つだけ返してください。`;
+
+      const id = await callGemini(prompt, 0.3); // 低温で確実にIDを返させる
+      const match = id.match(/e\d+/);
+      if (match && exps.find(e => e.id === match[0])) return exps.find(e => e.id === match[0]);
+      // マッチしない場合はランダムか順番
+      return exps[Math.floor(Math.random() * exps.length)];
+    };
+
+    // ── ターン制で議論を進める ──────────────────────────────────────────
+    const runTurns = async (branchId, numTurns) => {
+      const cfg = settingsRef.current;
+      for(let t=0; t<numTurns; t++){
+        if(!isGenRef.current) return;
+        const history = getMsgs(branchId);
+        const nextExp = await selectNextExpert(history, topicRef.current);
+        if(!nextExp) break;
+        await genOne(nextExp, branchId, history, cfg, t === 0);
       }
     };
 
@@ -826,7 +850,7 @@ ${dispName(expert)}の発言:`;
       setBranches([{ id, name:'本流', parentId:null, messages:[] }]);
       setCurBranch(id);
       setIsStarted(true); setIsGen(true); isGenRef.current=true; setError(null);
-      try { await runRounds(id, settings.rounds); }
+      try { await runTurns(id, settings.rounds); }
       catch(e){ setError(e.message); }
       finally { setIsGen(false); isGenRef.current=false; setGenExpert(null); }
     };
@@ -841,7 +865,7 @@ ${dispName(expert)}の発言:`;
       const um = { id:`m${uid()}`, type:'user', expertId:null, content:text, timestamp:ts() };
       pushMsg(curBranch, um);
       setIsGen(true); isGenRef.current=true; setError(null);
-      try { await runRounds(curBranch, 1); }
+      try { await runTurns(curBranch, 2); } // ユーザー介入後は2ターン程度進める
       catch(e){ setError(e.message); }
       finally { setIsGen(false); isGenRef.current=false; setGenExpert(null); }
     };
@@ -850,7 +874,7 @@ ${dispName(expert)}の発言:`;
     const handleContinue = async () => {
       if(!curBranch||isGen) return;
       setIsGen(true); isGenRef.current=true; setError(null);
-      try { await runRounds(curBranch, 1); }
+      try { await runTurns(curBranch, 3); } // 3ターン分進める
       catch(e){ setError(e.message); }
       finally { setIsGen(false); isGenRef.current=false; setGenExpert(null); }
     };
@@ -872,7 +896,7 @@ ${dispName(expert)}の発言:`;
         pushMsg(id, um);
       }
       setIsGen(true); isGenRef.current=true; setError(null);
-      try { await runRounds(id, settings.rounds); }
+      try { await runTurns(id, settings.rounds); }
       catch(e){ setError(e.message); }
       finally { setIsGen(false); isGenRef.current=false; setGenExpert(null); }
     };
@@ -958,12 +982,15 @@ ${dispName(expert)}の発言:`;
                 </div>
               </div>
               <div className="setting-item">
-                <div className="setting-label">自動ラウンド数</div>
+                <div className="setting-label">自動発言数</div>
                 <div className="round-ctrl">
                   <button className="round-btn" onClick={()=>setSettings(s=>({...s,rounds:Math.max(1,s.rounds-1)}))}>−</button>
                   <span className="round-val">{settings.rounds}</span>
-                  <button className="round-btn" onClick={()=>setSettings(s=>({...s,rounds:Math.min(5,s.rounds+1)}))}>+</button>
-                  <span style={{fontSize:10,color:'#9ca3af'}}>ラウンド</span>
+                  <button className="round-btn" onClick={()=>setSettings(s=>({...s,rounds:Math.min(10,s.rounds+1)}))}>+</button>
+                  <span style={{fontSize:10,color:'#9ca3af'}}>発言分</span>
+                </div>
+                <div style={{fontSize:9,color:'#9ca3af',marginTop:3}}>
+                  1回の実行でAIが何名選んで発言させるかを設定します。
                 </div>
               </div>
 
