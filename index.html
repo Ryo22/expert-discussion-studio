@@ -466,13 +466,12 @@
   const LEVEL_MAP   = { general:'一般向け', intermediate:'中級', advanced:'専門家向け' };
   const INTENS_MAP  = { calm:'冷静', moderate:'普通', heated:'白熱' };
 
-  // 利用可能なモデル一覧
+  // 利用可能なモデル一覧（お使いの無料枠クォータに基づく）
   const MODELS = [
-    { id:'gemini-2.5-flash',               label:'Gemini 2.5 Flash (推奨)', note:'無料: 5 RPM' },
-    { id:'gemini-2.0-flash',               label:'Gemini 2.0 Flash',        note:'無料: 15 RPM' },
-    { id:'gemini-2.0-flash-lite',          label:'Gemini 2.0 Flash Lite',   note:'無料: 15 RPM' },
-    { id:'gemini-1.5-flash',               label:'Gemini 1.5 Flash',        note:'旧モデル' },
-    { id:'gemini-1.5-pro',                 label:'Gemini 1.5 Pro',          note:'旧モデル' },
+    { id:'gemini-3.1-flash-lite',          label:'Gemini 3.1 Flash Lite (推奨)', note:'無料: 15 RPM / 500 RPD (最も余裕あり)' },
+    { id:'gemini-3-flash',                 label:'Gemini 3 Flash',               note:'無料: 5 RPM' },
+    { id:'gemini-2.5-flash-lite',          label:'Gemini 2.5 Flash Lite',        note:'無料: 10 RPM' },
+    { id:'gemini-2.5-flash',               label:'Gemini 2.5 Flash',             note:'無料: 5 RPM / 20 RPD (制限強め)' },
   ];
 
   const ts  = () => Date.now();
@@ -690,8 +689,8 @@
     const [curBranch, setCurBranch] = useState(null);
     const [settings, setSettings]   = useState({
       level:'advanced', intensity:'moderate', rounds:5,
-      model:'gemini-2.5-flash',
-      reqDelay:13,   // リクエスト間隔（秒）。無料Gemini 2.5 Flash (5 RPM) → 13s推奨
+      model:'gemini-3.1-flash-lite',
+      reqDelay:5,   // リクエスト間隔（秒）。推奨モデル = 15 RPM → 5s推奨
     });
     const [retryCountdown, setRetryCountdown] = useState(0); // リトライ待機カウントダウン
     const [inputHasContent, setInputHasContent] = useState(false);
@@ -729,7 +728,7 @@
 
     // ── Gemini API（リトライ付き）────────────────────────────────────────────
     const callGemini = async (prompt, temp=0.75, attempt=0) => {
-      const model = settingsRef.current.model || 'gemini-2.5-flash';
+      const model = settingsRef.current.model || 'gemini-3.1-flash-lite';
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         { method:'POST', headers:{'Content-Type':'application/json'},
@@ -1033,7 +1032,8 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}`).join('\n')}
                 />
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:'#9ca3af'}}>
                   <span>1秒（有料）</span>
-                  <span>13秒（無料推奨）</span>
+                  <span>5秒（推奨）</span>
+                  <span>13秒（2.5 Flash用）</span>
                   <span>30秒</span>
                 </div>
               </div>
