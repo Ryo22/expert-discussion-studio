@@ -269,7 +269,14 @@
     .input-bar {
       background: white; border-top: 1px solid #e2e0db;
       padding: 10px 16px; display: flex; align-items: flex-end; gap: 9px; flex-shrink: 0;
+      flex-wrap: wrap;
     }
+    .voice-controls { display: flex; align-items: center; gap: 12px; width: 100%; padding-bottom: 8px; border-bottom: 1px solid #f3f4f6; margin-bottom: 5px; }
+    .mute-btn { border: none; background: #f3f4f6; border-radius: 50%; width: 32px; height: 32px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.2s; }
+    .mute-btn:hover { background: #e5e7eb; }
+    .mute-btn.muted { background: #fee2e2; color: #ef4444; }
+    .speed-ctrl { display: flex; align-items: center; gap: 8px; font-size: 10px; color: #6b7280; flex: 1; }
+    .speed-ctrl input { flex: 1; accent-color: #5a7ba2; cursor: pointer; }
     .input-hint { font-size: 10px; color: #b0aba5; white-space: nowrap; flex-shrink: 0; padding-bottom: 9px; }
 
     /* Rich text input – contentEditable */
@@ -732,6 +739,9 @@
     const [forkData, setForkData]   = useState(null);
     const [showApi, setShowApi]     = useState(false);
     const [expertModal, setExpertModal] = useState(null);
+    const [voiceMode, setVoiceMode] = useState(false);
+    const [voiceSpeed, setVoiceSpeed] = useState(1.0);
+    const [isMuted, setIsMuted]     = useState(false);
 
     const endRef       = useRef(null);
     const inputDivRef  = useRef(null);
@@ -744,6 +754,73 @@
     const [sessions, setSessions] = useState(() => JSON.parse(localStorage.getItem('eds_sessions') || '[]'));
     const [curSessionId, setCurSessionId] = useState(null);
     const abortControllerRef = useRef(null);
+    const recognitionRef = useRef(null);
+
+    // 音声合成（読み上げ）
+    const speakText = (text, expertId) => {
+      if (!window.speechSynthesis) return;
+      window.speechSynthesis.cancel(); // 前の発言を止める
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'ja-JP';
+      utter.rate = voiceSpeed;
+      
+      // 専門家ごとにピッチや話者をわずかに変える（OS依存だが努力値）
+      const voices = window.speechSynthesis.getVoices();
+      const jaVoices = voices.filter(v => v.lang.includes('ja'));
+      if (expertId && jaVoices.length > 0) {
+        // IDの数字部分などを使ってバリエーションを出す
+        const idx = parseInt(expertId.replace('e',''), 10) || 0;
+        utter.voice = jaVoices[idx % jaVoices.length];
+        utter.pitch = 0.8 + ((idx % 5) * 0.1); // 0.8 〜 1.2
+      } else if (jaVoices.length > 0) {
+        utter.voice = jaVoices[0];
+      }
+      window.speechSynthesis.speak(utter);
+    };
+
+    // 音声認識（入力）
+    useEffect(() => {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return;
+      
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'ja-JP';
+
+      recognitionRef.current.onresult = (e) => {
+        if (isMuted) return;
+        let final = '';
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          if (e.results[i].isFinal) final += e.results[i][0].transcript;
+        }
+        if (final && inputDivRef.current) {
+          inputDivRef.current.innerText += final;
+          setInputHasContent(true);
+        }
+      };
+
+      return () => { if(recognitionRef.current) recognitionRef.current.stop(); };
+    }, []);
+
+    useEffect(() => {
+      if (voiceMode && !isMuted) {
+        try { recognitionRef.current?.start(); } catch(e){}
+      } else {
+        recognitionRef.current?.stop();
+      }
+    }, [voiceMode, isMuted]);
+
+    // メッセージが追加された時の読み上げトリガー
+    useEffect(() => {
+      if (!voiceMode || branches.length === 0) return;
+      const msgs = currentBranch?.messages || [];
+      if (msgs.length === 0) return;
+      const last = msgs[msgs.length - 1];
+      if (last.type === 'expert') {
+        speakText(last.content, last.expertId);
+      }
+    }, [branches, voiceMode]);
 
     useEffect(()=>{ expertsRef.current = experts; }, [experts]);
     useEffect(()=>{ settingsRef.current = settings; }, [settings]);
@@ -1083,6 +1160,19 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
         {/* TopBar */}
         <div className="topbar">
           <div className="topbar-left">
+            {/* 音声モード切替 */}
+            <button 
+              className={`icon-btn ${voiceMode ? 'active' : ''}`} 
+              title="音声モード" 
+              onClick={() => {
+                if(!voiceMode) window.speechSynthesis?.getVoices(); // ボイス一覧の初期化
+                setVoiceMode(!voiceMode);
+              }}
+              style={{marginRight:8, background: voiceMode ? 'rgba(76,175,80,0.3)' : 'transparent'}}
+            >
+              {voiceMode ? '🎙️' : '💬'}
+            </button>
+
             <button className="icon-btn" onClick={() => setSidebarOpen(!sidebarOpen)} style={{marginRight:8, color:'white'}}>
               {sidebarOpen ? '✕' : '☰'}
             </button>
@@ -1367,8 +1457,19 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
                 </div>
 
                 {/* Input bar */}
-                <div className="input-bar">
-                  <span className="input-hint">{isGen?'介入中…':'介入する'}</span>
+                <div className={`input-bar ${voiceMode ? 'voice-active' : ''}`}>
+                  {voiceMode && (
+                    <div className="voice-controls">
+                      <button className={`mute-btn ${isMuted ? 'muted' : ''}`} onClick={() => setIsMuted(!isMuted)}>
+                        {isMuted ? '🔇' : '🎤'}
+                      </button>
+                      <div className="speed-ctrl">
+                        <label>速さ: {voiceSpeed.toFixed(1)}</label>
+                        <input type="range" min="0.5" max="2.0" step="0.1" value={voiceSpeed} onChange={(e) => setVoiceSpeed(parseFloat(e.target.value))} />
+                      </div>
+                    </div>
+                  )}
+                  <span className="input-hint">{isGen?'介入中…':(voiceMode?'音声/文字で介入':'介入する')}</span>
                   <div
                     ref={inputDivRef}
                     contentEditable="true"
