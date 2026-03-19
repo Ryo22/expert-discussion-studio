@@ -61,7 +61,27 @@
     }
 
     /* ── Layout ── */
-    .main-layout { display: flex; flex: 1; overflow: hidden; }
+    .main-layout { display: flex; flex: 1; overflow: hidden; position: relative; }
+    .sidebar-overlay { display: none; }
+
+    /* Mobile adjustments */
+    @media (max-width: 768px) {
+      .sidebar {
+        position: absolute; top: 0; bottom: 0; left: -266px;
+        z-index: 50; transition: left 0.3s ease; box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+      }
+      .sidebar.open { left: 0; }
+      .sidebar-overlay {
+        display: block; position: fixed; inset: 0;
+        background: rgba(0,0,0,0.3); z-index: 40; pointer-events: none; opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+      .sidebar-overlay.open { pointer-events: auto; opacity: 1; }
+      .content-area { width: 100%; }
+      .landing-card { padding: 30px 20px; }
+      .role-preview-grid { grid-template-columns: repeat(2, 1fr); }
+      .topic-bar-text { font-size: 11px; }
+    }
 
     /* ── Sidebar ── */
     .sidebar {
@@ -485,6 +505,10 @@
   const uid = () => Math.random().toString(36).slice(2);
   const fmtTime = (t) => { const d=new Date(t); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
 
+  // 簡易難読化（ローカルストレージ用）
+  const encK = (k) => k ? btoa(k.split('').reverse().join('')) : '';
+  const decK = (k) => { try { return k ? atob(k).split('').reverse().join('') : ''; } catch(e){return '';} };
+
   // Display name: use set name, or first part of role (before parenthesis)
   const dispName = (e) => {
     if (!e) return '?';
@@ -686,7 +710,7 @@
 
   // ─── App ─────────────────────────────────────────────────────────────────────
   const App = () => {
-    const [apiKey, setApiKey]   = useState(()=>localStorage.getItem('eds_key')||'');
+    const [apiKey, setApiKey]   = useState(()=>decK(localStorage.getItem('eds_key_enc'))||'');
     const [experts, setExperts] = useState(DEFAULT_EXPERTS);
     const [topic, setTopic]     = useState('');
     const [isStarted, setIsStarted] = useState(false);
@@ -694,6 +718,7 @@
     const [genExpert, setGenExpert] = useState(null);
     const [branches, setBranches]   = useState([]);
     const [curBranch, setCurBranch] = useState(null);
+    const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
     const [availableModels, setAvailableModels] = useState(DEFAULT_MODELS);
     const [settings, setSettings]   = useState({
       level:'advanced', intensity:'moderate', rounds:5,
@@ -1012,14 +1037,20 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
         {/* TopBar */}
         <div className="topbar">
           <div className="topbar-left">
+            <button className="icon-btn" onClick={() => setSidebarOpen(!sidebarOpen)} style={{marginRight:8, color:'white'}}>
+              {sidebarOpen ? '✕' : '☰'}
+            </button>
             <div className="topbar-logo">EDS</div>
-            <div>
+            <div className="mobile-hide">
               <div className="topbar-title">Expert Discussion Studio</div>
               <div className="topbar-subtitle">世界会議・社会シミュレーション討論プラットフォーム</div>
             </div>
           </div>
+          <style>{`
+            @media (max-width: 600px) { .mobile-hide { display: none; } }
+          `}</style>
           <div className="topbar-right">
-            {isStarted && <span className="topbar-chip">{levelLabel} · {INTENS_MAP[settings.intensity]}</span>}
+            {isStarted && <span className="topbar-chip mobile-hide">{levelLabel} · {INTENS_MAP[settings.intensity]}</span>}
             <button className="icon-btn" title="APIキー設定" onClick={()=>setShowApi(true)}>🔑</button>
             {isStarted && <button className="icon-btn" title="新しい議論" onClick={handleReset}>🏠</button>}
           </div>
@@ -1027,9 +1058,11 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
 
         {/* Main Layout */}
         <div className="main-layout">
+          
+          <div className={`sidebar-overlay${sidebarOpen ? ' open' : ''}`} onClick={() => setSidebarOpen(false)} />
 
           {/* Sidebar */}
-          <div className="sidebar">
+          <div className={`sidebar${sidebarOpen ? ' open' : ''}`} style={!sidebarOpen && window.innerWidth > 768 ? {width:0, overflow:'hidden', border:0} : { transition: 'all 0.3s ease' }}>
             <div className="sidebar-section">
               <div className="sidebar-title">精鋭ロール ({experts.length})</div>
               {experts.map(exp=>(
@@ -1284,7 +1317,12 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
         {showApi && (
           <ApiKeyModal
             currentKey={apiKey}
-            onSave={k=>{localStorage.setItem('eds_key',k);setApiKey(k);setShowApi(false);}}
+            onSave={k=>{
+              const encrypted = encK(k);
+              localStorage.setItem('eds_key_enc', encrypted);
+              setApiKey(k);
+              setShowApi(false);
+            }}
             onClose={()=>setShowApi(false)}
           />
         )}
