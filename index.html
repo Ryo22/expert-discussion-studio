@@ -466,12 +466,13 @@
   const LEVEL_MAP   = { general:'一般向け', intermediate:'中級', advanced:'専門家向け' };
   const INTENS_MAP  = { calm:'冷静', moderate:'普通', heated:'白熱' };
 
-  // 利用可能なモデル一覧（お使いの無料枠クォータに基づく）
-  const MODELS = [
-    { id:'gemini-3.1-flash-lite',          label:'Gemini 3.1 Flash Lite (推奨)', note:'無料: 15 RPM / 500 RPD (最も余裕あり)' },
+  // 利用可能なモデル一覧のデフォルト設定（2026年最新モデルを含む）
+  const DEFAULT_MODELS = [
+    { id:'gemini-3.1-flash-lite',          label:'Gemini 3.1 Flash Lite (最新推奨)', note:'無料: 15 RPM / 500 RPD' },
     { id:'gemini-3-flash',                 label:'Gemini 3 Flash',               note:'無料: 5 RPM' },
-    { id:'gemini-2.5-flash-lite',          label:'Gemini 2.5 Flash Lite',        note:'無料: 10 RPM' },
-    { id:'gemini-2.5-flash',               label:'Gemini 2.5 Flash',             note:'無料: 5 RPM / 20 RPD (制限強め)' },
+    { id:'gemini-2.5-flash',               label:'Gemini 2.5 Flash',             note:'無料: 5 RPM / 20 RPD' },
+    { id:'gemini-2.1-flash',               label:'Gemini 2.1 Flash (安定)',      note:'無料: 15 RPM' },
+    { id:'gemini-2.1-pro',                 label:'Gemini 2.1 Pro (高性能)',      note:'無料: 2 RPM / 50 RPD' },
   ];
 
   const ts  = () => Date.now();
@@ -593,8 +594,8 @@
   };
 
   // ─── ApiKeyModal ──────────────────────────────────────────────────────────────
-  const ApiKeyModal = ({ onSave, onClose }) => {
-    const [k, setK] = useState('');
+  const ApiKeyModal = ({ currentKey='', onSave, onClose }) => {
+    const [k, setK] = useState(currentKey);
     return (
       <div className="overlay">
         <div className="modal">
@@ -687,11 +688,13 @@
     const [genExpert, setGenExpert] = useState(null);
     const [branches, setBranches]   = useState([]);
     const [curBranch, setCurBranch] = useState(null);
+    const [availableModels, setAvailableModels] = useState(DEFAULT_MODELS);
     const [settings, setSettings]   = useState({
       level:'advanced', intensity:'moderate', rounds:5,
       model:'gemini-3.1-flash-lite',
-      reqDelay:5,   // リクエスト間隔（秒）。推奨モデル = 15 RPM → 5s推奨
+      reqDelay:4,   // リクエスト間隔（秒）。
     });
+    const [isFetchingModels, setIsFetchingModels] = useState(false);
     const [retryCountdown, setRetryCountdown] = useState(0); // リトライ待機カウントダウン
     const [inputHasContent, setInputHasContent] = useState(false);
     const [error, setError]         = useState(null);
@@ -717,6 +720,54 @@
 
     const currentBranch = branches.find(b=>b.id===curBranch);
     const messages = currentBranch?.messages || [];
+
+    // モデル一覧を取得する関数
+    const fetchAvailableModels = useCallback(async (key) => {
+      if (!key) return;
+      setIsFetchingModels(true);
+      setError(null);
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+        if (!res.ok) {
+          const err = await res.json().catch(()=>({}));
+          throw new Error(err?.error?.message || 'モデル一覧の取得に失敗しました');
+        }
+        const data = await res.json();
+        // generateContent が可能なモデルのみを抽出
+        const filtered = data.models
+          .filter(m => m.supportedGenerationMethods.includes('generateContent'))
+          .map(m => ({
+            id: m.name.replace('models/', ''),
+            label: m.displayName,
+            note: `入力制限: ${m.inputTokenLimit}`
+          }))
+          .sort((a, b) => {
+            // バージョン番号が大きいものを優先的に上位に持ってくる
+            if (a.id > b.id) return -1;
+            if (a.id < b.id) return 1;
+            return 0;
+          });
+        
+        if (filtered.length > 0) {
+          setAvailableModels(filtered);
+          setSettings(s => {
+            if (!filtered.find(m => m.id === s.model)) {
+              return { ...s, model: filtered[0].id };
+            }
+            return s;
+          });
+        }
+      } catch (e) {
+        console.error('Failed to fetch models:', e);
+        setError(`モデル取得エラー: ${e.message}`);
+      } finally {
+        setIsFetchingModels(false);
+      }
+    }, []);
+
+    useEffect(() => {
+      if (apiKey) fetchAvailableModels(apiKey);
+    }, [apiKey, fetchAvailableModels]);
 
     const initBranch = (id, base=[]) => { workingMsgs.current[id] = [...base]; };
     const getMsgs    = (id) => workingMsgs.current[id] || [];
@@ -999,22 +1050,37 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}`).join('\n')}
 
               {/* ── モデル選択 ── */}
               <div className="setting-item">
-                <div className="setting-label">モデル</div>
+                <div className="setting-label" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span>モデル</span>
+                  <button 
+                    onClick={() => fetchAvailableModels(apiKey)}
+                    disabled={isFetchingModels || !apiKey}
+                    style={{
+                      fontSize:9, padding:'2px 6px', borderRadius:5, 
+                      border:'1px solid #5a7ba2', background:isFetchingModels ? '#eee' : 'white',
+                      color:'#5a7ba2', cursor:apiKey?'pointer':'not-allowed', fontWeights:700
+                    }}
+                  >
+                    {isFetchingModels ? '取得中...' : 'モデルリストを更新'}
+                  </button>
+                </div>
+                {!apiKey && <div style={{fontSize:9,color:'#d93025',marginBottom:4}}>APIキーを設定してください</div>}
                 <select
                   value={settings.model}
                   onChange={e=>setSettings(s=>({...s,model:e.target.value}))}
+                  disabled={isFetchingModels}
                   style={{
                     width:'100%', padding:'5px 8px', borderRadius:7,
                     border:'1px solid #d1cdc6', fontSize:11, fontFamily:'inherit',
-                    background:'white', color:'#374151', outline:'none', cursor:'pointer',
+                    background:isFetchingModels ? '#f5f5f5' : 'white', color:'#374151', outline:'none', cursor:'pointer',
                   }}
                 >
-                  {MODELS.map(m=>(
+                  {availableModels.map(m=>(
                     <option key={m.id} value={m.id}>{m.label}</option>
                   ))}
                 </select>
                 <div style={{fontSize:9,color:'#9ca3af',marginTop:3}}>
-                  {MODELS.find(m=>m.id===settings.model)?.note}
+                  {availableModels.find(m=>m.id===settings.model)?.note}
                 </div>
               </div>
 
@@ -1033,7 +1099,7 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}`).join('\n')}
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:'#9ca3af'}}>
                   <span>1秒（有料）</span>
                   <span>5秒（推奨）</span>
-                  <span>13秒（2.5 Flash用）</span>
+                  <span>13秒</span>
                   <span>30秒</span>
                 </div>
               </div>
@@ -1177,7 +1243,11 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}`).join('\n')}
 
         {/* Modals */}
         {showApi && (
-          <ApiKeyModal onSave={k=>{localStorage.setItem('eds_key',k);setApiKey(k);setShowApi(false);}} onClose={()=>setShowApi(false)} />
+          <ApiKeyModal
+            currentKey={apiKey}
+            onSave={k=>{localStorage.setItem('eds_key',k);setApiKey(k);setShowApi(false);}}
+            onClose={()=>setShowApi(false)}
+          />
         )}
         {expertModal && (
           <ExpertModal
