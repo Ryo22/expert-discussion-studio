@@ -422,7 +422,14 @@
     .preset-action-btn:hover { color: #5a7ba2; }
     .icon-btn-small { background: none; border: none; cursor: pointer; font-size: 10px; color: #5a7ba2; font-weight: 700; opacity: 0.7; }
     .icon-btn-small:hover { opacity: 1; }
-    .expert-list-scroll { max-height: 400px; overflow-y: auto; margin-bottom: 8px; }
+    .expert-delete-btn { 
+      background: none; border: none; cursor: pointer; color: #9ca3af; padding: 4px; 
+      font-size: 16px; opacity: 0; transition: all 0.2s; display: flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px; border-radius: 4px; border: 1px solid transparent; margin-left: 2px;
+    }
+    .expert-item:hover .expert-delete-btn { opacity: 1; }
+    .expert-delete-btn:hover { background: #fee2e2; color: #ef4444; border-color: #fecaca; }
+    .expert-edit-btn { margin-left: auto; }
     </style>
   </head>
 <body>
@@ -794,7 +801,31 @@
     const [curSessionId, setCurSessionId] = useState(null);
     const abortControllerRef = useRef(null);
     const recognitionRef = useRef(null);
+    const undoStack = useRef([]);
 
+    // 操作履歴を保存
+    const saveHistory = useCallback(() => {
+      undoStack.current.push(JSON.stringify({ presets, activePresetId }));
+      if (undoStack.current.length > 50) undoStack.current.shift();
+    }, [presets, activePresetId]);
+
+    const handleUndo = useCallback(() => {
+      if (undoStack.current.length === 0) return;
+      const prev = JSON.parse(undoStack.current.pop());
+      setPresets(prev.presets);
+      setActivePresetId(prev.activePresetId);
+    }, []);
+
+    useEffect(() => {
+      const handleGlobalKey = (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+          e.preventDefault();
+          handleUndo();
+        }
+      };
+      window.addEventListener('keydown', handleGlobalKey);
+      return () => window.removeEventListener('keydown', handleGlobalKey);
+    }, [handleUndo]);
     // プリセットとexpertsの同期
     useEffect(() => {
       const active = presets.find(p => p.id === activePresetId) || presets[0];
@@ -1217,16 +1248,22 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
 
     // ── Expert CRUD ───────────────────────────────────────────────────────────
     const saveExpert = (data) => {
+      saveHistory();
       setExperts(prev=>prev.find(e=>e.id===data.id)?prev.map(e=>e.id===data.id?data:e):[...prev,data]);
       setExpertModal(null);
     };
     const delExpert = (id) => {
-      if(experts.length>1){ setExperts(prev=>prev.filter(e=>e.id!==id)); setExpertModal(null); }
+      if(experts.length>1){ 
+        saveHistory();
+        setExperts(prev=>prev.filter(e=>e.id!==id)); 
+        setExpertModal(null); 
+      }
     };
 
     // ── Reset ─────────────────────────────────────────────────────────────────
     const handleReset = () => {
       stopTalking();
+      saveHistory();
       setIsStarted(false); setTopic(''); setBranches([]); setCurBranch(null); setCurSessionId(null);
       setError(null); isGenRef.current=false; setIsGen(false); setGenExpert(null);
     };
@@ -1370,6 +1407,7 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
                       </span>
                     )}
                     <button className="expert-edit-btn" onClick={()=>setExpertModal(exp)}>✏️</button>
+                    <button className="expert-delete-btn" title="ロールを削除" onClick={(e) => { e.stopPropagation(); delExpert(exp.id); }}>×</button>
                   </div>
                 ))}
               </div>
