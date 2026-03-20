@@ -536,6 +536,33 @@
     },
   ];
 
+  const DEFAULT_TRI_FACTIONS = [
+    {
+      id:'tr0', name:'議長',
+      role:'議論進行・要約担当 (Moderator)',
+      description:'議論の進行、中立的な要約、各参加者への公平な発言機会の提供を行う。',
+      color:'#455a64', power:5
+    },
+    {
+      id:'tr1', name:'保守派',
+      role:'リスク管理・価値保護 (Success Guardian)',
+      description:'既存の成功体験とリスクを重視。「壊してはいけないもの」を守り、急進的な変化による不確実性と損失を警告する立場。',
+      color:'#1e3a8a', power:0
+    },
+    {
+      id:'tr2', name:'革新派',
+      role:'新技術・破壊的創造 (Disruptive Pioneer)',
+      description: '「破壊的創造」を提唱。既存の前提を疑い、最新技術や異分野の知見を積極的に導入して、これまでにない価値とパラダイムシフトを創出する。',
+      color:'#b91c1c', power:0
+    },
+    {
+      id:'tr3', name:'中道派',
+      role:'移行戦略・合意形成 (Transition Strategist)',
+      description:'理想（革新）と現実（保守）のギャップを埋める「移行戦略」を考える。対立する両者の妥協点を見つけ出し、現実的に実装可能なステップと合意形成を提案する。',
+      color:'#047857', power:0
+    }
+  ];
+
   const LEVEL_MAP   = { general:'一般向け', intermediate:'中級', advanced:'専門家向け' };
   const INTENS_MAP  = { calm:'冷静', moderate:'普通', heated:'白熱' };
 
@@ -767,8 +794,17 @@
     const [apiKey, setApiKey]   = useState(()=>decK(localStorage.getItem('eds_key_enc'))||'');
     const [presets, setPresets] = useState(() => {
       const saved = localStorage.getItem('eds_presets');
-      if (saved) return JSON.parse(saved);
-      return [{ id: 'p-default', name: '標準セット', experts: DEFAULT_EXPERTS }];
+      let initial = [];
+      if (saved) {
+        initial = JSON.parse(saved);
+      } else {
+        initial = [{ id: 'p-default', name: '標準セット (13ロール)', experts: DEFAULT_EXPERTS }];
+      }
+      // 新しい三派プリセットがなければ追加
+      if (!initial.find(p => p.name.includes('三派'))) {
+        initial.push({ id: 'p-tri', name: '議論三派（＋議長）', experts: DEFAULT_TRI_FACTIONS });
+      }
+      return initial;
     });
     const [activePresetId, setActivePresetId] = useState(() => localStorage.getItem('eds_active_preset_id') || 'p-default');
     
