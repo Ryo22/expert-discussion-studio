@@ -1825,36 +1825,56 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
               </div>
             </div>
             <div className="sidebar-section">
-              <div className="sidebar-title">現在の議題</div>
+              <div className="sidebar-title">議題</div>
               <div style={{fontSize:'12px', color:'#374151', background:'#fff', padding:'8px', borderRadius:'6px', border:'1px solid #e2e0db', marginBottom:'10px', wordBreak:'break-word'}}>
                 {topic || '未設定'}
               </div>
               {sessions.length > 0 && (
                 <>
-                  <div className="sidebar-title" style={{marginTop:'12px'}}>過去の議題 (履歴)</div>
+                  <div className="sidebar-title" style={{marginTop:'12px'}}>履歴</div>
                   <div style={{display:'flex', flexDirection:'column', gap:'6px'}}>
                     {sessions.map((s) => (
-                      <div 
-                        key={s.id} 
-                        onClick={() => loadSession(s)} 
+                      <div
+                        key={s.id}
                         style={{
-                          fontSize:'11px', color: (s.id === curSessionId) ? '#5a7ba2' : '#6b7280', 
-                          cursor:isGen ? 'default' : 'pointer', padding:'6px 8px', borderRadius:'6px', 
-                          border: (s.id === curSessionId) ? '1px solid #c8d5e3' : '1px solid transparent', 
+                          fontSize:'11px', color: (s.id === curSessionId) ? '#5a7ba2' : '#6b7280',
+                          borderRadius:'6px',
+                          border: (s.id === curSessionId) ? '1px solid #c8d5e3' : '1px solid transparent',
                           background: (s.id === curSessionId) ? '#f0f4f9' : 'transparent',
-                          transition:'all 0.15s', wordBreak:'break-all'
-                        }} 
+                          transition:'all 0.15s', position:'relative',
+                          display:'flex', alignItems:'flex-start', gap:'4px',
+                        }}
                         className="hist-item"
                       >
-                        <div style={{fontWeight: (s.id === curSessionId) ? 700 : 500, marginBottom:2}}>{s.topic}</div>
-                        <div style={{fontSize:9, opacity:0.6, display:'flex', justifyContent:'space-between'}}>
-                          <span>{s.branches[0].messages.length} 発言</span>
-                          <span>{new Date(s.lastActive).toLocaleDateString()}</span>
+                        <div
+                          onClick={() => loadSession(s)}
+                          style={{flex:1, cursor:isGen?'default':'pointer', padding:'6px 8px', wordBreak:'break-all'}}
+                        >
+                          <div style={{fontWeight: (s.id === curSessionId) ? 700 : 500, marginBottom:2}}>{s.topic}</div>
+                          <div style={{fontSize:9, opacity:0.6, display:'flex', justifyContent:'space-between'}}>
+                            <span>{s.branches[0].messages.length} 発言</span>
+                            <span>{new Date(s.lastActive).toLocaleDateString()}</span>
+                          </div>
                         </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const next = sessions.filter(x => x.id !== s.id);
+                            setSessions(next);
+                            if (s.id === curSessionId) handleReset();
+                          }}
+                          title="この議題を削除"
+                          style={{
+                            flexShrink:0, background:'none', border:'none', cursor:'pointer',
+                            color:'#9ca3af', fontSize:12, padding:'6px 6px 0 0', lineHeight:1,
+                            opacity:0, transition:'opacity 0.15s',
+                          }}
+                          className="sess-del-btn"
+                        >×</button>
                       </div>
                     ))}
                   </div>
-                  <button 
+                  <button
                     onClick={() => { if(confirm('すべての履歴を削除しますか？')) { setSessions([]); handleReset(); }}}
                     style={{width:'100%', marginTop:12, padding:6, fontSize:9, color:'#9ca3af', background:'none', border:'none', cursor:'pointer'}}
                   >
@@ -1866,6 +1886,8 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
           </div>
           <style>{`
             .hist-item:hover { background: #f0f4f9; border-color: #c8d5e3; color: #5a7ba2; }
+            .hist-item:hover .sess-del-btn { opacity: 1 !important; }
+            .sess-del-btn:hover { color: #ef4444 !important; }
           `}</style>
 
           {/* Content */}
