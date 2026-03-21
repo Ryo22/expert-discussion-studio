@@ -588,22 +588,18 @@
   // 削除・リネーム不可のデフォルトプリセットID
   const DEFAULT_PRESET_IDS = ['p-default', 'p-tri', 'p-ts'];
 
-  // デフォルトプリセットの定義（常にコード定義を正とする）
+  // デフォルトプリセットの定義（常にコード定義を正とする・順序固定）
   const DEFAULT_PRESET_DEFS = [
     { id: 'p-default', name: '標準セット (13ロール)', experts: DEFAULT_EXPERTS },
-    { id: 'p-tri',     name: '議論三派（＋議長）',   experts: DEFAULT_TRI_FACTIONS },
+    { id: 'p-tri',     name: '保守・中道・革新',      experts: DEFAULT_TRI_FACTIONS },
     { id: 'p-ts',      name: '先生と生徒',            experts: DEFAULT_TEACHER_STUDENT },
   ];
 
-  // ロード済みプリセットにデフォルト定義を強制マージ
+  // デフォルトを先頭に固定し、カスタムプリセットをその後に並べる
   const mergeWithDefaults = (loaded) => {
-    let result = Array.isArray(loaded) ? [...loaded] : [];
-    DEFAULT_PRESET_DEFS.forEach(def => {
-      const idx = result.findIndex(p => p.id === def.id);
-      if (idx >= 0) result[idx] = def;   // 常にコード定義で上書き
-      else result.unshift(def);           // 存在しなければ先頭に追加
-    });
-    return result;
+    const arr = Array.isArray(loaded) ? loaded : [];
+    const custom = arr.filter(p => !DEFAULT_PRESET_IDS.includes(p.id));
+    return [...DEFAULT_PRESET_DEFS, ...custom];
   };
 
   const LEVEL_MAP   = { general:'一般向け', intermediate:'中級', advanced:'専門家向け' };
