@@ -244,7 +244,7 @@
     .msg-name { font-size: 12px; font-weight: 700; color: #374151; }
     .msg-role-label { font-size: 10px; color: #9ca3af; font-weight: 400; }
     .msg-time { font-size: 9px; color: #c0bdb7; margin-left: 5px; }
-    .msg-body { font-size: 13px; line-height: 1.8; color: #374151; white-space: pre-wrap; }
+    .msg-body { font-size: 15px; line-height: 1.8; color: #374151; white-space: pre-wrap; }
     .msg-actions { position: absolute; top: 9px; right: 9px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
     .msg-action-btn {
       padding: 3px 9px; font-size: 10px; border: 1px solid #d1cdc6;
@@ -802,32 +802,48 @@
   };
 
   // ─── MessageCard ─────────────────────────────────────────────────────────────
-  const MsgCard = ({ msg, expert, isUser, onFork }) => (
-    <div className={`msg-card${isUser?' user-msg':''}`} style={expert?{borderLeftColor:expert.color}:{}}>
-      <div className="msg-head">
-        {isUser
-          ? <div className="avatar" style={{width:28,height:28,background:'#3a4f6e',fontSize:12}}>あ</div>
-          : <Av expert={expert} size={28}/>
-        }
-        <div className="msg-meta">
-          <span className="msg-name">{isUser?'あなた':dispName(expert)}</span>
-          {!isUser && expert && <span className="msg-role-label"> · {expert.role.split(' (')[0]}</span>}
-          <span className="msg-time">{fmtTime(msg.timestamp)}</span>
+  const MsgCard = ({ msg, expert, isUser, onFork, fontSize=15, searchQuery='', searchMode='text', isAiMatch=false }) => {
+    const highlightText = (text, query) => {
+      if (!query || searchMode !== 'text') return text;
+      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+      return parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase()
+          ? <mark key={i} style={{background:'#fef08a', borderRadius:2, padding:'0 1px'}}>{part}</mark>
+          : part
+      );
+    };
+    const cardStyle = {
+      ...(expert ? {borderLeftColor: expert.color} : {}),
+      ...(isAiMatch ? {background:'#fffbeb', borderColor:'#f59e0b', boxShadow:'0 0 0 1px #f59e0b33'} : {}),
+    };
+    return (
+      <div className={`msg-card${isUser?' user-msg':''}`} style={cardStyle}>
+        <div className="msg-head">
+          {isUser
+            ? <div className="avatar" style={{width:28,height:28,background:'#3a4f6e',fontSize:12}}>あ</div>
+            : <Av expert={expert} size={28}/>
+          }
+          <div className="msg-meta">
+            <span className="msg-name">{isUser?'あなた':dispName(expert)}</span>
+            {!isUser && expert && <span className="msg-role-label"> · {expert.role.split(' (')[0]}</span>}
+            <span className="msg-time">{fmtTime(msg.timestamp)}</span>
+          </div>
+          {!isUser && expert && expert.power !== 0 && (
+            <span className="power-badge" style={{background: expert.power>0?'#e8f0fe':'#fff3e0', color:powerColor(expert.power)}}>
+              {expert.power>0?`+${expert.power}`:expert.power}
+            </span>
+          )}
         </div>
-        {!isUser && expert && expert.power !== 0 && (
-          <span className="power-badge" style={{background: expert.power>0?'#e8f0fe':'#fff3e0', color:powerColor(expert.power)}}>
-            {expert.power>0?`+${expert.power}`:expert.power}
-          </span>
+        <div className="msg-body" style={{fontSize}}>{searchQuery && searchMode==='text' ? highlightText(msg.content, searchQuery) : msg.content}</div>
+        {!isUser && onFork && (
+          <div className="msg-actions">
+            <button className="msg-action-btn" onClick={()=>onFork(msg)}>🔀 ここから分岐</button>
+          </div>
         )}
       </div>
-      <div className="msg-body">{msg.content}</div>
-      {!isUser && onFork && (
-        <div className="msg-actions">
-          <button className="msg-action-btn" onClick={()=>onFork(msg)}>🔀 ここから分岐</button>
-        </div>
-      )}
-    </div>
-  );
+    );
+  };
 
   // ─── TypingIndicator ─────────────────────────────────────────────────────────
   const TypingIndicator = ({ expert }) => (
@@ -913,6 +929,15 @@
     const [error, setError]         = useState(null);
     const [forkData, setForkData]   = useState(null);
     const [showApi, setShowApi]     = useState(false);
+    const [msgFontSize, setMsgFontSize] = useState(15);
+    const [discSearch, setDiscSearch] = useState('');
+    const [discSearchMode, setDiscSearchMode] = useState('text'); // 'text' | 'ai'
+    const [aiMatchIds, setAiMatchIds] = useState(null); // Set of message ids (AI mode result)
+    const [discSearchLoading, setDiscSearchLoading] = useState(false);
+    const [histSearch, setHistSearch] = useState('');
+    const [histSearchMode, setHistSearchMode] = useState('text'); // 'text' | 'ai'
+    const [histAiMatchIds, setHistAiMatchIds] = useState(null); // Set of session ids (AI mode result)
+    const [histSearchLoading, setHistSearchLoading] = useState(false);
     const [expertModal, setExpertModal] = useState(null);
     const [voiceMode, setVoiceMode] = useState(false);
     const [voiceSpeed, setVoiceSpeed] = useState(1.0);
@@ -1189,6 +1214,47 @@
 
     const currentBranch = branches.find(b=>b.id===curBranch);
     const messages = currentBranch?.messages || [];
+
+    // 議論内 AI 検索
+    const doDiscAISearch = useCallback(async () => {
+      if (!apiKey || !discSearch.trim() || messages.length === 0) return;
+      setDiscSearchLoading(true);
+      try {
+        const msgList = messages.map(m => `ID:${m.id} | ${m.content.slice(0, 300)}`).join('\n');
+        const prompt = `以下の議論メッセージから「${discSearch}」という観点に関連するものを見つけてください。\n関連するメッセージのIDのみをカンマ区切りで返してください。他の文字は一切含めないでください。\n\n${msgList}`;
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${apiKey}`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}], generationConfig:{temperature:0.1,maxOutputTokens:500}})
+        });
+        const data = await res.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const ids = new Set(text.split(/[\s,]+/).map(s=>s.trim()).filter(Boolean));
+        setAiMatchIds(ids);
+      } catch(e) { console.error('AI search error:', e); }
+      setDiscSearchLoading(false);
+    }, [apiKey, discSearch, messages, settings.model]);
+
+    // 履歴横断 AI 検索
+    const doHistAISearch = useCallback(async () => {
+      if (!apiKey || !histSearch.trim() || sessions.length === 0) return;
+      setHistSearchLoading(true);
+      try {
+        const sessList = sessions.map(s => {
+          const msgs = s.branches?.[0]?.messages?.slice(0,8).map(m=>m.content.slice(0,150)).join(' / ') || '';
+          return `ID:${s.id} | 議題:${s.topic} | 内容:${msgs}`;
+        }).join('\n');
+        const prompt = `以下の議論履歴から「${histSearch}」に関連するものを見つけてください。\n関連する履歴のIDのみをカンマ区切りで返してください。他の文字は一切含めないでください。\n\n${sessList}`;
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${apiKey}`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}], generationConfig:{temperature:0.1,maxOutputTokens:500}})
+        });
+        const data = await res.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const ids = new Set(text.split(/[\s,]+/).map(s=>s.trim()).filter(Boolean));
+        setHistAiMatchIds(ids);
+      } catch(e) { console.error('Hist AI search error:', e); }
+      setHistSearchLoading(false);
+    }, [apiKey, histSearch, sessions, settings.model]);
 
     // モデル一覧を取得する関数
     const fetchAvailableModels = useCallback(async (key) => {
@@ -1831,49 +1897,83 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
               </div>
               {sessions.length > 0 && (
                 <>
-                  <div className="sidebar-title" style={{marginTop:'12px'}}>履歴</div>
+                  <div style={{marginTop:'12px', marginBottom:6}}>
+                    <div className="sidebar-title" style={{marginBottom:4}}>履歴</div>
+                    <div style={{display:'flex', gap:3, alignItems:'center', flexWrap:'wrap'}}>
+                      <input
+                        value={histSearch}
+                        onChange={e=>{setHistSearch(e.target.value);setHistAiMatchIds(null);}}
+                        placeholder="🔍 検索..."
+                        style={{flex:1,minWidth:60,fontSize:10,padding:'3px 7px',border:'1px solid #d1cdc6',borderRadius:5,outline:'none',fontFamily:'inherit',background:'white'}}
+                      />
+                      {histSearch&&<button onClick={()=>{setHistSearch('');setHistAiMatchIds(null);}} style={{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:12,padding:'0 1px'}}>✕</button>}
+                    </div>
+                    {/* AIでさらに検索（明示的に押した時だけ実行） */}
+                    {histSearch&&(
+                      <button onClick={doHistAISearch} disabled={histSearchLoading} title="AIによるセマンティック検索（APIを呼び出します）"
+                        style={{marginTop:4,width:'100%',fontSize:9,padding:'3px 0',border:'1px solid',borderRadius:5,cursor:'pointer',
+                          borderColor:histAiMatchIds!==null?'#f59e0b':'#d1cdc6',
+                          color:histAiMatchIds!==null?'#92400e':'#9ca3af',
+                          background:histAiMatchIds!==null?'#fffbeb':'white'}}>
+                        {histSearchLoading?'AI検索中…':'🤖 AIでさらに検索'}
+                      </button>
+                    )}
+                  </div>
                   <div style={{display:'flex', flexDirection:'column', gap:'6px'}}>
-                    {sessions.map((s) => (
-                      <div
-                        key={s.id}
-                        style={{
-                          fontSize:'11px', color: (s.id === curSessionId) ? '#5a7ba2' : '#6b7280',
-                          borderRadius:'6px',
-                          border: (s.id === curSessionId) ? '1px solid #c8d5e3' : '1px solid transparent',
-                          background: (s.id === curSessionId) ? '#f0f4f9' : 'transparent',
-                          transition:'all 0.15s', position:'relative',
-                          display:'flex', alignItems:'flex-start', gap:'4px',
-                        }}
-                        className="hist-item"
-                      >
-                        <div
-                          onClick={() => loadSession(s)}
-                          style={{flex:1, cursor:isGen?'default':'pointer', padding:'6px 8px', wordBreak:'break-all'}}
-                        >
-                          <div style={{fontWeight: (s.id === curSessionId) ? 700 : 500, marginBottom:2}}>{s.topic}</div>
-                          <div style={{fontSize:9, opacity:0.6, display:'flex', justifyContent:'space-between'}}>
-                            <span>{s.branches[0].messages.length} 発言</span>
-                            <span>{new Date(s.lastActive).toLocaleDateString()}</span>
+                    {(()=>{
+                      const q = histSearch.toLowerCase();
+                      const filteredSessions = sessions.filter(s => {
+                        if (!histSearch) return true;
+                        // AI検索結果がある場合はそちらを優先
+                        if (histAiMatchIds!==null) return histAiMatchIds.has(s.id);
+                        // テキスト検索：議題名または発言内容に一致
+                        return s.topic.toLowerCase().includes(q) ||
+                          s.branches?.some(b=>b.messages?.some(m=>m.content.toLowerCase().includes(q)));
+                      });
+                      return filteredSessions.length === 0
+                        ? <div style={{fontSize:10,color:'#9ca3af',padding:'8px 4px'}}>一致する履歴がありません</div>
+                        : filteredSessions.map((s) => (
+                          <div
+                            key={s.id}
+                            style={{
+                              fontSize:'11px', color: (s.id === curSessionId) ? '#5a7ba2' : '#6b7280',
+                              borderRadius:'6px',
+                              border: (s.id === curSessionId) ? '1px solid #c8d5e3' : '1px solid transparent',
+                              background: (s.id === curSessionId) ? '#f0f4f9' : 'transparent',
+                              transition:'all 0.15s', position:'relative',
+                              display:'flex', alignItems:'flex-start', gap:'4px',
+                            }}
+                            className="hist-item"
+                          >
+                            <div
+                              onClick={() => loadSession(s)}
+                              style={{flex:1, cursor:isGen?'default':'pointer', padding:'6px 8px', wordBreak:'break-all'}}
+                            >
+                              <div style={{fontWeight: (s.id === curSessionId) ? 700 : 500, marginBottom:2}}>{s.topic}</div>
+                              <div style={{fontSize:9, opacity:0.6, display:'flex', justifyContent:'space-between'}}>
+                                <span>{s.branches[0].messages.length} 発言</span>
+                                <span>{new Date(s.lastActive).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!confirm(`「${s.topic}」を削除しますか？`)) return;
+                                const next = sessions.filter(x => x.id !== s.id);
+                                setSessions(next);
+                                if (s.id === curSessionId) handleReset();
+                              }}
+                              title="この議題を削除"
+                              style={{
+                                flexShrink:0, background:'none', border:'none', cursor:'pointer',
+                                color:'#9ca3af', fontSize:12, padding:'6px 6px 0 0', lineHeight:1,
+                                opacity:0, transition:'opacity 0.15s',
+                              }}
+                              className="sess-del-btn"
+                            >×</button>
                           </div>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!confirm(`「${s.topic}」を削除しますか？`)) return;
-                            const next = sessions.filter(x => x.id !== s.id);
-                            setSessions(next);
-                            if (s.id === curSessionId) handleReset();
-                          }}
-                          title="この議題を削除"
-                          style={{
-                            flexShrink:0, background:'none', border:'none', cursor:'pointer',
-                            color:'#9ca3af', fontSize:12, padding:'6px 6px 0 0', lineHeight:1,
-                            opacity:0, transition:'opacity 0.15s',
-                          }}
-                          className="sess-del-btn"
-                        >×</button>
-                      </div>
-                    ))}
+                        ));
+                    })()}
                   </div>
                   <button
                     onClick={() => { if(confirm('すべての履歴を削除しますか？')) { setSessions([]); handleReset(); }}}
@@ -1963,14 +2063,61 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
                   </div>
                 )}
 
+                {/* 検索 + 文字サイズ ツールバー */}
+                {isStarted && (
+                  <div style={{display:'flex', alignItems:'center', gap:6, padding:'5px 14px', borderBottom:'1px solid #e8e4df', background:'#faf9f7', flexShrink:0, flexWrap:'wrap'}}>
+                    {/* 文字サイズ */}
+                    <button onClick={()=>setMsgFontSize(s=>Math.max(10,s-1))} style={{background:'none',border:'1px solid #d1cdc6',borderRadius:5,cursor:'pointer',fontSize:10,padding:'2px 6px',color:'#6b7280',fontWeight:700}}>A−</button>
+                    <span style={{fontSize:10,color:'#9ca3af',minWidth:22,textAlign:'center'}}>{msgFontSize}</span>
+                    <button onClick={()=>setMsgFontSize(s=>Math.min(24,s+1))} style={{background:'none',border:'1px solid #d1cdc6',borderRadius:5,cursor:'pointer',fontSize:11,padding:'2px 6px',color:'#6b7280',fontWeight:700}}>A+</button>
+                    <div style={{width:1,height:16,background:'#e2e0db',margin:'0 2px'}}/>
+                    {/* テキスト検索入力 */}
+                    <input
+                      value={discSearch}
+                      onChange={e=>{setDiscSearch(e.target.value);setAiMatchIds(null);}}
+                      placeholder="🔍 メッセージを検索..."
+                      style={{flex:1,minWidth:100,fontSize:11,padding:'3px 8px',border:'1px solid #d1cdc6',borderRadius:6,outline:'none',fontFamily:'inherit',background:'white'}}
+                    />
+                    {/* テキスト検索のヒット件数 */}
+                    {discSearch&&(()=>{
+                      const q=discSearch.toLowerCase();
+                      const cnt=messages.filter(m=>m.content.toLowerCase().includes(q)).length;
+                      return cnt>0
+                        ?<span style={{fontSize:9,color:'#5a7ba2',whiteSpace:'nowrap'}}>{cnt}件</span>
+                        :<span style={{fontSize:9,color:'#ef4444',whiteSpace:'nowrap'}}>0件</span>;
+                    })()}
+                    {/* AIでさらに検索（明示的に押した時だけ実行） */}
+                    {discSearch&&(
+                      <button onClick={doDiscAISearch} disabled={discSearchLoading} title="AIによるセマンティック検索（APIを呼び出します）"
+                        style={{fontSize:9,padding:'3px 7px',border:'1px solid',borderRadius:5,cursor:'pointer',whiteSpace:'nowrap',
+                          borderColor: aiMatchIds!==null?'#f59e0b':'#d1cdc6',
+                          color: aiMatchIds!==null?'#92400e':'#9ca3af',
+                          background: aiMatchIds!==null?'#fffbeb':'white'}}>
+                        {discSearchLoading?'AI検索中…':'🤖 AIでさらに検索'}
+                      </button>
+                    )}
+                    {aiMatchIds!==null&&<span style={{fontSize:9,color:'#92400e',whiteSpace:'nowrap'}}>AI: {aiMatchIds.size}件</span>}
+                    {discSearch&&(
+                      <button onClick={()=>{setDiscSearch('');setAiMatchIds(null);}} style={{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:14,padding:'0 2px'}}>✕</button>
+                    )}
+                  </div>
+                )}
+
                 {/* Messages */}
                 <div className="messages-scroll">
                   {messages.map(msg=>{
                     const expert = msg.type==='expert' ? (experts.find(e=>e.id===msg.expertId) || msg.expertSnapshot || null) : null;
+                    const isAiMatch = aiMatchIds !== null && aiMatchIds.has(msg.id);
+                    const isTextMatch = !discSearch || msg.type==='user' || msg.content.toLowerCase().includes(discSearch.toLowerCase());
                     return (
-                      <MsgCard key={msg.id} msg={msg} expert={expert} isUser={msg.type==='user'}
-                        onFork={msg.type==='expert'&&!isGen ? (m)=>setForkData({message:m,expert}) : null}
-                      />
+                      <div key={msg.id} style={{opacity: isTextMatch ? 1 : 0.3, transition:'opacity 0.15s'}}>
+                        <MsgCard msg={msg} expert={expert} isUser={msg.type==='user'}
+                          onFork={msg.type==='expert'&&!isGen ? (m)=>setForkData({message:m,expert}) : null}
+                          fontSize={msgFontSize}
+                          searchQuery={discSearch}
+                          isAiMatch={isAiMatch}
+                        />
+                      </div>
                     );
                   })}
                   {isGen && genExpert && <TypingIndicator expert={genExpert}/>}
