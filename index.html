@@ -997,10 +997,19 @@
                 if (k) setApiKey(k);
               }
             });
+            // クラウドが空だった場合、ローカルデータを強制プッシュ
+            const hasPresets  = data.some(item => item.data_key === 'presets');
+            const hasSessions = data.some(item => item.data_key === 'sessions');
+            setTimeout(() => {
+              initialSyncCompleted.current = true;
+              if (!hasPresets)  setPresets(p => [...p]);   // useEffectを再トリガーして保存
+              if (!hasSessions) setSessions(s => [...s]);
+            }, 1500);
+          } else {
+            setTimeout(() => { initialSyncCompleted.current = true; }, 1500);
           }
         } catch(e) { console.error('Cloud load error:', e); }
         setCloudStatus('idle');
-        setTimeout(() => { initialSyncCompleted.current = true; }, 1500);
       };
       syncFromCloud();
     }, [user]);
