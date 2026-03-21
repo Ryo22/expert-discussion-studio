@@ -1291,7 +1291,7 @@ ${dispName(expert)}の発言:`;
       const temp = cfg.intensity==='calm'?0.42:cfg.intensity==='heated'?0.93:0.72;
       const { text, audioData } = await callGemini(buildPrompt(expert, history, topicRef.current, cfg), temp, 0, voiceMode);
       if(!text) throw new Error('空のレスポンスが返されました');
-      const msg = { id:`m${uid()}`, type:'expert', expertId:expert.id, content:text, timestamp:ts() };
+      const msg = { id:`m${uid()}`, type:'expert', expertId:expert.id, expertSnapshot:{ name:expert.name, role:expert.role, color:expert.color }, content:text, timestamp:ts() };
       pushMsg(branchId, msg);
       if (audioData) playNativeAudio(audioData);
       setGenExpert(null);
@@ -1854,7 +1854,7 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
                 {/* Messages */}
                 <div className="messages-scroll">
                   {messages.map(msg=>{
-                    const expert = msg.type==='expert' ? experts.find(e=>e.id===msg.expertId) : null;
+                    const expert = msg.type==='expert' ? (experts.find(e=>e.id===msg.expertId) || msg.expertSnapshot || null) : null;
                     return (
                       <MsgCard key={msg.id} msg={msg} expert={expert} isUser={msg.type==='user'}
                         onFork={msg.type==='expert'&&!isGen ? (m)=>setForkData({message:m,expert}) : null}
