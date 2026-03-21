@@ -605,17 +605,18 @@
   const LEVEL_MAP   = { general:'一般向け', intermediate:'中級', advanced:'専門家向け' };
   const INTENS_MAP  = { calm:'冷静', moderate:'普通', heated:'白熱' };
 
-  // 利用可能なモデル一覧（rpm: 分あたり上限, rpd: 日あたり上限, null=制限なし）
+  // 利用可能なGeminiモデル一覧（rpm: 分あたり上限, rpd: 日あたり上限）
+  // RPDが優先 → 同率ならRPM降順でデフォルトを自動選択
   const DEFAULT_MODELS = [
-    { id:'gemini-2.5-flash-lite', label:'Gemini 2.5 Flash Lite',  note:'無料: 10 RPM / 20 RPD', rpm: 10, rpd: 20 },
-    { id:'gemini-2.5-flash',      label:'Gemini 2.5 Flash',       note:'無料: 5 RPM / 20 RPD',  rpm: 5,  rpd: 20 },
-    { id:'gemini-3-flash',        label:'Gemini 3 Flash',         note:'無料: 5 RPM / 20 RPD',  rpm: 5,  rpd: 20 },
+    { id:'gemini-3.1-flash-lite', label:'Gemini 3.1 Flash Lite',  note:'無料: 15 RPM / 500 RPD', rpm: 15, rpd: 500 },
+    { id:'gemini-2.5-flash-lite', label:'Gemini 2.5 Flash Lite',  note:'無料: 10 RPM / 20 RPD',  rpm: 10, rpd: 20  },
+    { id:'gemini-2.5-flash',      label:'Gemini 2.5 Flash',       note:'無料: 5 RPM / 20 RPD',   rpm: 5,  rpd: 20  },
+    { id:'gemini-3-flash',        label:'Gemini 3 Flash',         note:'無料: 5 RPM / 20 RPD',   rpm: 5,  rpd: 20  },
   ];
   // RPD降順 → 同率ならRPM降順で最上位モデルをデフォルトに
   const DEFAULT_MODEL_ID = DEFAULT_MODELS.reduce((best, m) => {
-    const bRpd = best.rpd ?? 999999, mRpd = m.rpd ?? 999999;
-    if (mRpd !== bRpd) return mRpd > bRpd ? m : best;
-    return (m.rpm ?? 0) > (best.rpm ?? 0) ? m : best;
+    if (m.rpd !== best.rpd) return m.rpd > best.rpd ? m : best;
+    return m.rpm > best.rpm ? m : best;
   }, DEFAULT_MODELS[0]).id;
 
   const ts  = () => Date.now();
