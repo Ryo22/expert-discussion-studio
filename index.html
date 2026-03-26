@@ -1801,7 +1801,7 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
                       </span>
                     )}
                     {DEFAULT_PRESET_IDS.includes(activePresetId) ? (
-                      <button className="expert-edit-btn" title="ロールの内容を確認" onClick={()=>setViewExpertModal(exp)}>👁</button>
+                      <button className="expert-edit-btn" title="ロールの内容を確認" onClick={()=>setViewExpertModal(exp)}>👀</button>
                     ) : (
                       <>
                         <button className="expert-edit-btn" onClick={()=>setExpertModal(exp)}>✏️</button>
