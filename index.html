@@ -679,7 +679,7 @@
   );
 
   // ─── ExpertModal ──────────────────────────────────────────────────────────────
-  const ExpertModal = ({ expert, onSave, onClose, onDelete }) => {
+  const ExpertModal = ({ expert, onSave, onClose, onDelete, readOnly = false }) => {
     const isNew = !expert;
     const [f, setF] = useState(expert || { id:`e${uid()}`, name:'', role:'', description:'', color:COLORS[0], power:0 });
     const ok = f.role.trim();
@@ -688,7 +688,10 @@
     return (
       <div className="overlay" onClick={onClose}>
         <div className="modal" onClick={e=>e.stopPropagation()}>
-          <div className="modal-title">{isNew ? '専門家を追加' : 'ロールを編集'}</div>
+          <div className="modal-title">
+            {readOnly ? 'ロールを確認' : (isNew ? '専門家を追加' : 'ロールを編集')}
+            {readOnly && <span style={{fontSize:11,fontWeight:400,color:'#9aa0a6',marginLeft:8}}>（読み取り専用）</span>}
+          </div>
 
           {/* Name (optional) */}
           <div className="form-field">
@@ -696,14 +699,16 @@
               名前 <span className="optional-badge">任意</span>
             </div>
             <input className="form-input" value={f.name} onChange={e=>setF({...f,name:e.target.value})}
-              placeholder="空白の場合はロール名で表示されます" />
+              placeholder="空白の場合はロール名で表示されます" disabled={readOnly}
+              style={readOnly?{background:'#f8f9fa',color:'#5f6368',cursor:'default'}:{}} />
           </div>
 
           {/* Role */}
           <div className="form-field">
-            <div className="form-label">ロール名・肩書き <span style={{color:'#d93025',fontSize:10}}>必須</span></div>
+            <div className="form-label">ロール名・肩書き {!readOnly && <span style={{color:'#d93025',fontSize:10}}>必須</span>}</div>
             <input className="form-input" value={f.role} onChange={e=>setF({...f,role:e.target.value})}
-              placeholder="例: 地政学ストラテジスト (Geopolitical Navigator)" />
+              placeholder="例: 地政学ストラテジスト (Geopolitical Navigator)" disabled={readOnly}
+              style={readOnly?{background:'#f8f9fa',color:'#5f6368',cursor:'default'}:{}} />
           </div>
 
           {/* Description */}
@@ -711,13 +716,15 @@
             <div className="form-label">ロールの役割・立場の説明</div>
             <textarea className="form-input form-textarea" value={f.description}
               onChange={e=>setF({...f,description:e.target.value})}
-              placeholder="このロールが議論で担う役割・立場・視点を記述します。AIへのプロンプトとして使われます。" />
+              placeholder="このロールが議論で担う役割・立場・視点を記述します。AIへのプロンプトとして使われます。"
+              disabled={readOnly}
+              style={readOnly?{background:'#f8f9fa',color:'#5f6368',cursor:'default',resize:'none'}:{}} />
           </div>
 
           {/* Power */}
           <div className="form-field">
             <div className="form-label">発言力・影響力 <span style={{fontSize:9,color:'#9aa0a6',fontWeight:500,textTransform:'none',letterSpacing:0}}>&nbsp;−10〜+10（デフォルト:0=平等）</span></div>
-            <div className="power-ctrl">
+            <div className="power-ctrl" style={readOnly?{pointerEvents:'none',opacity:0.7}:{}}>
               <button className="round-btn" style={{flexShrink:0}} onClick={()=>setF({...f,power:Math.max(-10,f.power-1)})}>−</button>
               <div className="power-track" style={{flex:1}}>
                 <div className="power-thumb" style={{left:`${pct}%`}} />
@@ -733,17 +740,23 @@
           {/* Color */}
           <div className="form-field">
             <div className="form-label">カラー</div>
-            <div className="color-row">
-              {COLORS.map(c=><div key={c} className={`color-dot${f.color===c?' selected':''}`} style={{background:c}} onClick={()=>setF({...f,color:c})} />)}
+            <div className="color-row" style={readOnly?{pointerEvents:'none',opacity:0.7}:{}}>
+              {COLORS.map(c=><div key={c} className={`color-dot${f.color===c?' selected':''}`} style={{background:c}} onClick={()=>!readOnly&&setF({...f,color:c})} />)}
             </div>
           </div>
 
           <div className="modal-actions">
-            {!isNew && onDelete && (
+            {!readOnly && !isNew && onDelete && (
               <button className="btn-secondary" style={{color:'#d93025',borderColor:'#f28b82',marginRight:'auto'}} onClick={()=>onDelete(f.id)}>削除</button>
             )}
-            <button className="btn-secondary" onClick={onClose}>キャンセル</button>
-            <button className="btn-primary" style={{opacity:ok?1:0.5}} onClick={()=>ok&&onSave(f)}>保存</button>
+            {readOnly ? (
+              <button className="btn-primary" onClick={onClose}>閉じる</button>
+            ) : (
+              <>
+                <button className="btn-secondary" onClick={onClose}>キャンセル</button>
+                <button className="btn-primary" style={{opacity:ok?1:0.5}} onClick={()=>ok&&onSave(f)}>保存</button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -936,6 +949,7 @@
     const [histAiMatchIds, setHistAiMatchIds] = useState(null); // Set of session ids (AI mode result)
     const [histSearchLoading, setHistSearchLoading] = useState(false);
     const [expertModal, setExpertModal] = useState(null);
+    const [viewExpertModal, setViewExpertModal] = useState(null);
     const [voiceMode, setVoiceMode] = useState(false);
     const [voiceSpeed, setVoiceSpeed] = useState(1.0);
     const [isMuted, setIsMuted]     = useState(false);
@@ -1786,7 +1800,9 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
                         {exp.power>0?`+${exp.power}`:exp.power}
                       </span>
                     )}
-                    {!DEFAULT_PRESET_IDS.includes(activePresetId) && (
+                    {DEFAULT_PRESET_IDS.includes(activePresetId) ? (
+                      <button className="expert-edit-btn" title="ロールの内容を確認" onClick={()=>setViewExpertModal(exp)}>👁</button>
+                    ) : (
                       <>
                         <button className="expert-edit-btn" onClick={()=>setExpertModal(exp)}>✏️</button>
                         <button className="expert-delete-btn" title="ロールを削除" onClick={(e) => { e.stopPropagation(); delExpert(exp.id); }}>×</button>
@@ -2219,6 +2235,13 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
             onSave={saveExpert}
             onClose={()=>setExpertModal(null)}
             onDelete={delExpert}
+          />
+        )}
+        {viewExpertModal && (
+          <ExpertModal
+            expert={viewExpertModal}
+            readOnly={true}
+            onClose={()=>setViewExpertModal(null)}
           />
         )}
         {forkData && (
