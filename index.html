@@ -1397,7 +1397,7 @@
       const pCtx = powerPrompt(expert.power||0);
       const hist = history.map(m=>{
         if(m.type==='user') return `[ユーザー]: ${m.content}`;
-        const e=expertsRef.current.find(x=>x.id===m.expertId);
+        const e = expertsRef.current.find(x=>x.id===m.expertId) || m.expertSnapshot;
         return `[${dispName(e)}(${e?.role?.split(' (')[0]||''})]: ${m.content}`;
       }).join('\n\n');
       return `これは「世界会議・社会シミュレーション」です。あなたは以下のロールとして参加します。
@@ -1463,7 +1463,7 @@ ${dispName(expert)}の発言:`;
       const exps = expertsRef.current;
       const histText = history.slice(-5).map(m=>{
         if(m.type==='user') return `[ユーザー]: ${m.content}`;
-        const e=exps.find(x=>x.id===m.expertId);
+        const e = exps.find(x=>x.id===m.expertId) || m.expertSnapshot;
         return `[${dispName(e)}]: ${m.content.slice(0,100)}...`;
       }).join('\n');
 
