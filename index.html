@@ -1098,21 +1098,38 @@
 
     // ─── Auth (Bypassed in no-auth branch) ───────────────────────────────────
     useEffect(() => {
-      // no-auth ブランチでは常にゲストユーザーとして動作させる
-      setUser({ id: 'guest-user', email: 'guest@discussion-studio.app' });
-      setAuthLoading(false);
-      /* 
-      // 元の認証ロジック（切替用として残す場合はコメントアウト）
       if (!sb) { setAuthLoading(false); return; }
-      sb.auth.getSession().then(({ data: { session } }) => {
-        setUser(session?.user || null);
-        setAuthLoading(false);
-      });
+      
+      const autoSignIn = async () => {
+        const { data: { session } } = await sb.auth.getSession();
+        if (session) {
+          setUser(session.user);
+          setAuthLoading(false);
+        } else {
+          try {
+            // パスワードなしで誰でも共有して使えるように、共通ユーザーとして自動ログイン
+            const { data: { user: guestUser }, error } = await sb.auth.signInWithPassword({
+              email: 'guest@discussion-studio.app', // あらかじめSupabaseで作成しておく必要があります
+              password: 'guest123456'
+            });
+            if (error) throw error;
+            setUser(guestUser);
+          } catch (e) {
+            console.error('Guest Auto-login failed:', e.message);
+            // ログイン失敗時はダミーをセットして閲覧のみ許可
+            setUser({ id: 'guest-fallback', email: 'guest@example.com' });
+          } finally {
+            setAuthLoading(false);
+          }
+        }
+      };
+
+      autoSignIn();
+      
       const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
         setUser(session?.user || null);
       });
       return () => subscription.unsubscribe();
-      */
     }, []);
 
     const saveToCloud = useCallback(async (key, data) => {
