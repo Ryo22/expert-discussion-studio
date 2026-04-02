@@ -1100,24 +1100,37 @@
     const topicRef     = useRef(topic);
 
     // ─── Auth ─────────────────────────────────────────────────────────────────
+    const resetLocalData = () => {
+      setSessions([]);
+      setCurSessionId(null);
+      setTopic('');
+      setExperts(DEFAULT_PRESETS[0].experts);
+      setActivePresetId(DEFAULT_PRESETS[0].id);
+      setPresets(DEFAULT_PRESETS);
+      setApiKey(''); // APIキーもアカウントごとに分ける場合はリセット
+    };
+
     useEffect(() => {
       if (!sb) { setAuthLoading(false); return; }
       sb.auth.getSession().then(({ data: { session } }) => {
+        if (!session) resetLocalData();
         setUser(session?.user || null);
         setAuthLoading(false);
       });
       const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
-        setUser(session?.user || null);
-        if (!session?.user) {
-          // ログアウト時はローカルの同期済みフラグをリセット
+        const newUser = session?.user || null;
+        if (newUser?.id !== user?.id) {
+          // ユーザーが変わった（ログアウト含む）場合はローカルデータをリセット
+          resetLocalData();
           initialSyncCompleted.current = false;
         }
+        setUser(newUser);
       });
       return () => subscription.unsubscribe();
-    }, []);
+    }, [user?.id]);
 
     const saveToCloud = useCallback(async (key, data) => {
-      if (!sb || !user) return;
+      if (!sb || !user || !initialSyncCompleted.current) return; // 同期完了前は保存しない
       setCloudStatus('syncing');
       try {
         const { error } = await sb.from('eds_cloud_data').upsert({
@@ -1134,22 +1147,26 @@
         setCloudStatus('error');
         setTimeout(() => setCloudStatus('idle'), 3000);
       }
-    }, [user]);
+    }, [user, initialSyncCompleted.current]);
 
     useEffect(() => {
-      if (!user) return;
-      initialSyncCompleted.current = false;
+      if (!user) {
+        initialSyncCompleted.current = false;
+        return;
+      }
       const syncFromCloud = async () => {
         if (!sb) { initialSyncCompleted.current = true; return; }
         setCloudStatus('syncing');
         try {
+          // 一旦現在のuidを記録
+          const currentUid = user.id;
           const { data, error } = await sb.from('eds_cloud_data').select('*').eq('user_id', user.id);
-          if (error) {
-            console.error('Cloud load error from Supabase:', error);
-            throw error;
-          }
-          if (data) {
-            // content は jsonb カラムなら object、text カラムなら string で返る
+          if (error) throw error;
+          
+          // 通信中にユーザーが切り替わっていないかチェック
+          if (user.id !== currentUid) return;
+
+          if (data && data.length > 0) {
             const parseContent = (val) => {
               if (typeof val === 'string') { try { return JSON.parse(val); } catch(e2) { return val; } }
               return val;
@@ -1162,22 +1179,19 @@
                 if (k) setApiKey(k);
               }
             });
-            // クラウドが空だった場合、ローカルデータを強制プッシュ
-            const hasPresets  = data.some(item => item.data_key === 'presets');
-            const hasSessions = data.some(item => item.data_key === 'sessions');
-            setTimeout(() => {
-              initialSyncCompleted.current = true;
-              if (!hasPresets)  setPresets(p => [...p]);   // useEffectを再トリガーして保存
-              if (!hasSessions) setSessions(s => [...s]);
-            }, 1500);
+            setTimeout(() => { initialSyncCompleted.current = true; }, 1000);
           } else {
-            setTimeout(() => { initialSyncCompleted.current = true; }, 1500);
+            // クラウドにデータがない新規ユーザー
+            initialSyncCompleted.current = true;
           }
-        } catch(e) { console.error('Cloud load error:', e); }
+        } catch(e) { 
+          console.error('Cloud load error:', e);
+          initialSyncCompleted.current = true; 
+        }
         setCloudStatus('idle');
       };
       syncFromCloud();
-    }, [user]);
+    }, [user?.id]);
     const abortControllerRef = useRef(null);
     const recognitionRef = useRef(null);
     const undoStack = useRef([]);
