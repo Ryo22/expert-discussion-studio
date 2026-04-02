@@ -1186,6 +1186,7 @@
 
     useEffect(() => {
       const handleGlobalKey = (e) => {
+        if (!e.key) return; // e.keyが未定義の場合は無視
         const isZ = e.key.toLowerCase() === 'z' || e.code === 'KeyZ';
         if ((e.metaKey || e.ctrlKey) && isZ && !e.shiftKey) {
           e.preventDefault();
