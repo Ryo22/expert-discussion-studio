@@ -1010,7 +1010,10 @@
               </form>
               <div className="divider">または</div>
               <button
-                onClick={() => sb && sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: window.location.href } })}
+                onClick={() => {
+                  const url = window.location.origin + window.location.pathname;
+                  sb && sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: url } });
+                }}
                 style={{
                   display:'flex', alignItems:'center', justifyContent:'center', gap:10, padding:'10px 20px',
                   width:'100%', background:'#fff', border:'1px solid #e2e0db', borderRadius:10,
