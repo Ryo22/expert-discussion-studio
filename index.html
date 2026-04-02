@@ -1124,12 +1124,22 @@
       if (!sb) return;
       const fetchSharedKey = async () => {
         try {
-          const { data, error } = await sb.from('eds_shared_config').select('config_value').eq('config_key', 'default_gemini_key').single();
+          const { data, error: sbError } = await sb.from('eds_shared_config').select('config_value').eq('config_key', 'default_gemini_key').single();
+          if (sbError) {
+            if (sbError.code === 'PGRST116') {
+              // データがない場合は正常系として扱う
+              console.log('共有デフォルトキーはまだ設定されていません。');
+            } else {
+              console.error('Supabase 共有キー読込エラー:', sbError.message, sbError.details);
+            }
+            return;
+          }
           if (data && data.config_value) {
+            console.log('共通デフォルトキーを適用しました。');
             setSharedDefaultKey(data.config_value);
           }
         } catch (e) {
-          console.warn('共有デフォルトキーの取得に失敗しました（設定前の場合もあります）:', e);
+          console.error('共有デフォルトキー取得時の致命的なエラー:', e);
         }
       };
       fetchSharedKey();
