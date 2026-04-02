@@ -914,6 +914,7 @@
       setAuthErr(''); setAuthMsg('');
       if (!sb) return;
       setLoading(true);
+      const redirectURL = window.location.origin + window.location.pathname;
       try {
         if (mode === 'login') {
           const { error } = await sb.auth.signInWithPassword({ email, password });
@@ -924,9 +925,12 @@
             throw error;
           }
         } else if (mode === 'signup') {
-          const { error } = await sb.auth.signUp({ email, password });
+          const { error } = await sb.auth.signUp({
+            email,
+            password,
+            options: { emailRedirectTo: redirectURL }
+          });
           if (error) {
-            // すでに登録されている場合や制限
             if (error.message.includes('User already registered')) {
               throw new Error('このメールアドレスは既に登録されています。Google認証をご利用か、パスワードの再設定をお試しください。');
             }
@@ -935,7 +939,7 @@
           setAuthMsg('確認メールを送信しました。メール内のリンクをクリックして登録を完了してください。');
         } else if (mode === 'forgot') {
           const { error } = await sb.auth.resetPasswordForEmail(email, {
-            redirectTo: window.location.origin + window.location.pathname,
+            redirectTo: redirectURL,
           });
           if (error) throw error;
           setAuthMsg('パスワード再設定用のメールを送信しました。');
