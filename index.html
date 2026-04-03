@@ -1276,21 +1276,25 @@
       window.addEventListener('keydown', handleGlobalKey, true); // capture phase
       return () => window.removeEventListener('keydown', handleGlobalKey, true);
     }, [handleUndo]);
-    // プリセット切替
+    // 1. activePresetIdが変更されたらlocalStorageに保存する
+    useEffect(() => {
+      localStorage.setItem('eds_active_preset_id', activePresetId);
+    }, [activePresetId]);
+
+    // 2. presetsが変更されたらlocalStorageとクラウドに保存する
+    useEffect(() => {
+      if (!initialSyncCompleted.current) return;
+      localStorage.setItem('eds_presets', JSON.stringify(presets));
+      saveToCloud('presets', presets);
+    }, [presets, saveToCloud]);
+
+    // 3. プリセット切替時にexpertsをロードする（presets自体が変更された際も反映する）
     useEffect(() => {
       const active = presets.find(p => p.id === activePresetId);
       if (active) {
         setExperts([...active.experts]); // 複製して状態セット
       }
-    }, [activePresetId]);
-
-    // expertsまたはpresetsが変更されたら保存
-    useEffect(() => {
-      const updatedPresets = presets.map(p => p.id === activePresetId ? { ...p, experts } : p);
-      localStorage.setItem('eds_presets', JSON.stringify(updatedPresets));
-      localStorage.setItem('eds_active_preset_id', activePresetId);
-      if (initialSyncCompleted.current) saveToCloud('presets', updatedPresets);
-    }, [experts, presets, activePresetId, saveToCloud]);
+    }, [activePresetId, presets]);
 
     // APIキーの保存/同期
     useEffect(() => {
@@ -1768,13 +1772,23 @@ ${exps.map(e => `- ID: ${e.id}, ロール: ${e.role}, 名前: ${e.name}`).join('
     // ── Expert CRUD ───────────────────────────────────────────────────────────
     const saveExpert = (data) => {
       saveHistory();
-      setExperts(prev=>prev.find(e=>e.id===data.id)?prev.map(e=>e.id===data.id?data:e):[...prev,data]);
+      const updatedExperts = experts.find(e => e.id === data.id) 
+        ? experts.map(e => e.id === data.id ? data : e) 
+        : [...experts, data];
+      
+      setExperts(updatedExperts);
+      // presetsも更新することで永続化をトリガーする
+      setPresets(prev => prev.map(p => p.id === activePresetId ? { ...p, experts: updatedExperts } : p));
       setExpertModal(null);
     };
+
     const delExpert = (id) => {
-      if(experts.length>1){ 
+      if (experts.length > 1) { 
         saveHistory();
-        setExperts(prev=>prev.filter(e=>e.id!==id)); 
+        const updatedExperts = experts.filter(e => e.id !== id);
+        setExperts(updatedExperts);
+        // presetsも更新することで永続化をトリガーする
+        setPresets(prev => prev.map(p => p.id === activePresetId ? { ...p, experts: updatedExperts } : p));
         setExpertModal(null); 
       }
     };
